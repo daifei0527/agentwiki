@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	awerrors "github.com/agentwiki/agentwiki/pkg/errors"
+	"github.com/agentwiki/agentwiki/internal/service/email"
 	"github.com/agentwiki/agentwiki/internal/storage/model"
 	"github.com/agentwiki/agentwiki/internal/storage"
 )
@@ -17,17 +18,19 @@ import (
 // UserHandler 用户 HTTP 处理器
 // 负责用户注册、邮箱验证、用户信息查询和条目评分
 type UserHandler struct {
-	userStore   storage.UserStore
-	entryStore  storage.EntryStore
-	ratingStore storage.RatingStore
+	userStore    storage.UserStore
+	entryStore   storage.EntryStore
+	ratingStore  storage.RatingStore
+	emailService email.Service
 }
 
 // NewUserHandler 创建新的 UserHandler 实例
-func NewUserHandler(userStore storage.UserStore, entryStore storage.EntryStore, ratingStore storage.RatingStore) *UserHandler {
+func NewUserHandler(userStore storage.UserStore, entryStore storage.EntryStore, ratingStore storage.RatingStore, emailService email.Service) *UserHandler {
 	return &UserHandler{
-		userStore:   userStore,
-		entryStore:  entryStore,
-		ratingStore: ratingStore,
+		userStore:    userStore,
+		entryStore:   entryStore,
+		ratingStore:  ratingStore,
+		emailService: emailService,
 	}
 }
 
@@ -99,6 +102,62 @@ func (h *UserHandler) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RequestEmailVerificationHandler 请求发送邮箱验证邮件
+// POST /api/v1/user/request-email-verification
+// 发送验证邮件到用户邮箱
+func (h *UserHandler) RequestEmailVerificationHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, awerrors.ErrJSONParse)
+		return
+	}
+
+	if req.Email == "" {
+		writeError(w, awerrors.ErrInvalidParams)
+		return
+	}
+
+	// 获取当前用户
+	user := getUserFromContext(r.Context())
+	if user == nil {
+		writeError(w, awerrors.ErrMissingAuth)
+		return
+	}
+
+	// 生成验证 token
+	token := generateEmailToken(req.Email + user.PublicKey)
+
+	// 发送验证邮件
+	if h.emailService != nil {
+		err := h.emailService.SendVerificationEmail(req.Email, token, user.PublicKey)
+		if err != nil {
+			writeError(w, awerrors.Wrap(800, awerrors.CategoryUser, "failed to send verification email", 500, err))
+			return
+		}
+	}
+
+	// 更新用户邮箱（但不验证）
+	user.Email = req.Email
+	user.LastActive = model.NowMillis()
+
+	_, err := h.userStore.Update(r.Context(), user)
+	if err != nil {
+		writeError(w, awerrors.Wrap(800, awerrors.CategoryUser, "failed to update user", 500, err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, &APIResponse{
+		Code:    0,
+		Message: "verification email sent",
+		Data: map[string]interface{}{
+			"email": req.Email,
+			"message": "Please check your email for verification link",
+		},
+	})
+}
+
 // VerifyEmailHandler 邮箱验证
 // POST /api/v1/user/verify-email
 // 验证用户邮箱，验证成功后升级为正式用户（Lv1）
@@ -133,8 +192,8 @@ func (h *UserHandler) VerifyEmailHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 验证 token（简化实现：token 需要与邮箱匹配的预共享密钥）
-	expectedToken := generateEmailToken(req.Email)
+	// 验证 token
+	expectedToken := generateEmailToken(req.Email + user.PublicKey)
 	if req.Token != expectedToken {
 		writeError(w, awerrors.ErrInvalidEmailToken)
 		return
@@ -150,6 +209,11 @@ func (h *UserHandler) VerifyEmailHandler(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		writeError(w, awerrors.Wrap(800, awerrors.CategoryUser, "failed to update user", 500, err))
 		return
+	}
+
+	// 发送欢迎邮件
+	if h.emailService != nil {
+		h.emailService.SendWelcomeEmail(req.Email, updated.AgentName)
 	}
 
 	writeJSON(w, http.StatusOK, &APIResponse{

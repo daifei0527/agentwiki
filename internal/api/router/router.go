@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentwiki/agentwiki/internal/api/handler"
 	"github.com/agentwiki/agentwiki/internal/api/middleware"
+	"github.com/agentwiki/agentwiki/internal/service/email"
 	"github.com/agentwiki/agentwiki/internal/storage"
 	"github.com/agentwiki/agentwiki/pkg/config"
 )
@@ -31,9 +32,17 @@ type Dependencies struct {
 func NewRouter(store *storage.Store, cfg *config.Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 
+	// 创建邮件服务
+	var emailService email.Service
+	if cfg.SMTP.Enabled {
+		emailService = email.NewSMTPService(cfg)
+	} else {
+		emailService = email.NewMockService()
+	}
+
 	// 创建各 handler
 	entryHandler := handler.NewEntryHandler(store.Entry, store.Search, store.User)
-	userHandler := handler.NewUserHandler(store.User, store.Entry, store.Rating)
+	userHandler := handler.NewUserHandler(store.User, store.Entry, store.Rating, emailService)
 	categoryHandler := handler.NewCategoryHandler(store.Category, store.Entry)
 	nodeHandler := handler.NewNodeHandler("local-node-1", cfg.Node.Type, "v0.1.0-dev", store.Entry)
 
@@ -125,6 +134,9 @@ func registerAuthRoutes(mux *http.ServeMux, authMW *middleware.AuthMiddleware, e
 
 	// 获取用户信息（GET /api/v1/user/info）
 	mux.Handle("/api/v1/user/info", authMW.Middleware(http.HandlerFunc(uh.GetUserInfoHandler)))
+
+	// 请求发送邮箱验证邮件（POST /api/v1/user/request-email-verification）
+	mux.Handle("/api/v1/user/request-email-verification", authMW.Middleware(http.HandlerFunc(uh.RequestEmailVerificationHandler)))
 
 	// 触发同步（GET /api/v1/node/sync）
 	mux.Handle("/api/v1/node/sync", authMW.Middleware(http.HandlerFunc(nh.TriggerSyncHandler)))

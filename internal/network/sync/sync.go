@@ -157,10 +157,50 @@ func (se *SyncEngine) IncrementalSync(ctx context.Context) error {
 	defer func() {
 		se.mu.Lock()
 		se.state = SyncStateIdle
+		se.lastSync = time.Now().UnixMilli()
 		se.mu.Unlock()
 	}()
 
+	// 这里应该实现与其他种子节点的同步逻辑
+	// 1. 发现其他种子节点
+	// 2. 与每个种子节点交换版本向量
+	// 3. 拉取需要更新的数据
+	// 4. 合并数据并解决冲突
+
 	return nil
+}
+
+// SeedSync 执行种子节点间的同步
+func (se *SyncEngine) SeedSync(ctx context.Context, peerIDs []string) error {
+	// 实现种子节点间的同步逻辑
+	// 1. 与每个种子节点建立连接
+	// 2. 交换版本向量
+	// 3. 拉取差异数据
+	// 4. 合并数据并解决冲突
+	// 5. 推送本地更新
+
+	return nil
+}
+
+// ResolveConflict 解决数据冲突
+func (se *SyncEngine) ResolveConflict(local, remote *model.KnowledgeEntry) *model.KnowledgeEntry {
+	// 冲突解决策略：最后写入胜出
+	if remote.UpdatedAt > local.UpdatedAt {
+		return remote
+	}
+	return local
+}
+
+// GetSyncStats 获取同步统计信息
+func (se *SyncEngine) GetSyncStats() map[string]interface{} {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+
+	return map[string]interface{}{
+		"state":     string(se.state),
+		"last_sync": se.lastSync,
+		"entry_count": len(se.versionVec),
+	}
 }
 
 func (se *SyncEngine) GetState() SyncState {
@@ -239,7 +279,20 @@ func (se *SyncEngine) HandleMirrorRequest(ctx context.Context, req *protocol.Mir
 	go func() {
 		defer close(dataCh)
 
-		entries, _, err := se.store.Entry.List(ctx, storage.EntryFilter{Limit: 10000})
+		// 构建分类过滤条件
+		filter := storage.EntryFilter{
+			Limit: 10000,
+		}
+
+		// 如果请求中指定了分类，则只返回对应分类的条目
+		if len(req.Categories) > 0 {
+			filter.Categories = req.Categories
+		} else if len(se.config.MirrorCategories) > 0 {
+			// 如果配置中指定了镜像分类，则使用配置的分类
+			filter.Categories = se.config.MirrorCategories
+		}
+
+		entries, _, err := se.store.Entry.List(ctx, filter)
 		if err != nil {
 			return
 		}
@@ -281,4 +334,27 @@ func (se *SyncEngine) HandleMirrorRequest(ctx context.Context, req *protocol.Mir
 	}()
 
 	return dataCh, nil
+}
+
+// StartMirrorSync 开始镜像同步
+func (se *SyncEngine) StartMirrorSync(ctx context.Context, categories []string) error {
+	// 实现镜像同步逻辑
+	// 1. 连接种子节点
+	// 2. 发送镜像请求
+	// 3. 接收并处理镜像数据
+	// 4. 存储到本地
+
+	return nil
+}
+
+// GetMirrorStatus 获取镜像状态
+func (se *SyncEngine) GetMirrorStatus() map[string]interface{} {
+	se.mu.RLock()
+	defer se.mu.RUnlock()
+
+	return map[string]interface{}{
+		"mirror_categories": se.config.MirrorCategories,
+		"max_local_size_mb": se.config.MaxLocalSizeMB,
+		"last_sync":         se.lastSync,
+	}
 }

@@ -27,6 +27,7 @@ type EntryStore interface {
 // EntryFilter 条目查询过滤器
 type EntryFilter struct {
 	Category  string
+	Categories []string
 	Tags      []string
 	Status    string
 	CreatedBy string

@@ -228,7 +228,8 @@ func IsCJK(r rune) bool {
 	return (r >= 0x4E00 && r <= 0x9FFF) ||   // CJK统一汉字
 		(r >= 0x3400 && r <= 0x4DBF) ||   // CJK扩展A
 		(r >= 0x3000 && r <= 0x303F) ||   // CJK标点符号
-		(r >= 0xFF00 && r <= 0xFFEF)      // 全角字符
+		(r >= 0xFF00 && r <= 0xFFEF) ||    // 全角字符
+		(r >= 0xAC00 && r <= 0xD7AF)       // 韩文字符
 }
 
 // ContainsCJK 判断字符串是否包含中日韩文字
