@@ -1,0 +1,42 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+agentwiki
+awctl
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Go workspace
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+*.db
+*.sst
+*.wal
+*.log
+
+# SSH keys
+ssh_keys/
+*.pem
+agentwiki_deploy
+agentwiki_deploy.pub
+
+# Temp
+/data/
