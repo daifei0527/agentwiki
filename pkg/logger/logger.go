@@ -314,3 +314,18 @@ func Fatalf(format string, args ...interface{}) {
 	}
 	os.Exit(1)
 }
+
+// SetLevel 动态设置全局日志级别
+func SetLevel(level int) {
+	if globalLogger != nil {
+		globalLogger.SetLevel(level)
+	}
+}
+
+// GetLevel 获取当前全局日志级别
+func GetLevel() int {
+	if globalLogger != nil {
+		return globalLogger.GetLevel()
+	}
+	return LevelInfo
+}

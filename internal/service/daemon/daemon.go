@@ -2,18 +2,18 @@ package daemon
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/agentwiki/agentwiki/pkg/config"
 	"github.com/kardianos/service"
 )
 
 type Program struct {
-	Config   *config.Config
-	StartFn  func() error
-	StopFn   func() error
+	httpHandler http.Handler
+	port        int
+	stopCh      chan struct{}
 }
 
 func (p *Program) Start(s service.Service) error {
@@ -22,34 +22,40 @@ func (p *Program) Start(s service.Service) error {
 }
 
 func (p *Program) run() {
-	if p.StartFn != nil {
-		p.StartFn()
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", p.port),
+		Handler: p.httpHandler,
 	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("HTTP server error: %v\n", err)
+		}
+	}()
+
+	<-p.stopCh
 }
 
 func (p *Program) Stop(s service.Service) error {
-	if p.StopFn != nil {
-		return p.StopFn()
-	}
+	close(p.stopCh)
 	return nil
 }
 
-type Daemon struct {
+type Service struct {
 	service service.Service
-	config  *config.Config
 }
 
-func NewDaemon(cfg *config.Config, startFn, stopFn func() error) (*Daemon, error) {
+func NewService(name, displayName, description string, httpHandler http.Handler, port int) (*Service, error) {
 	svcConfig := &service.Config{
-		Name:        "AgentWiki",
-		DisplayName: "AgentWiki Distributed Knowledge Base",
-		Description: "P2P distributed knowledge base for AI agents",
+		Name:        name,
+		DisplayName: displayName,
+		Description: description,
 	}
 
 	prg := &Program{
-		Config:  cfg,
-		StartFn: startFn,
-		StopFn:  stopFn,
+		httpHandler: httpHandler,
+		port:        port,
+		stopCh:      make(chan struct{}),
 	}
 
 	svc, err := service.New(prg, svcConfig)
@@ -57,34 +63,33 @@ func NewDaemon(cfg *config.Config, startFn, stopFn func() error) (*Daemon, error
 		return nil, fmt.Errorf("create service: %w", err)
 	}
 
-	return &Daemon{
+	return &Service{
 		service: svc,
-		config:  cfg,
 	}, nil
 }
 
-func (d *Daemon) Run() error {
-	return d.service.Run()
+func (s *Service) Run() error {
+	return s.service.Run()
 }
 
-func (d *Daemon) Install() error {
-	return d.service.Install()
+func (s *Service) Install() error {
+	return s.service.Install()
 }
 
-func (d *Daemon) Uninstall() error {
-	return d.service.Uninstall()
+func (s *Service) Uninstall() error {
+	return s.service.Uninstall()
 }
 
-func (d *Daemon) Start() error {
-	return d.service.Start()
+func (s *Service) Start() error {
+	return s.service.Start()
 }
 
-func (d *Daemon) Stop() error {
-	return d.service.Stop()
+func (s *Service) Stop() error {
+	return s.service.Stop()
 }
 
-func (d *Daemon) Status() (string, error) {
-	status, err := d.service.Status()
+func (s *Service) Status() (string, error) {
+	status, err := s.service.Status()
 	if err != nil {
 		return "unknown", err
 	}
@@ -107,39 +112,4 @@ func WaitForSignal(stopFn func()) {
 	if stopFn != nil {
 		stopFn()
 	}
-}
-
-func RunAsService(cfg *config.Config, startFn, stopFn func() error) error {
-	if len(os.Args) > 1 {
-		d, err := NewDaemon(cfg, startFn, stopFn)
-		if err != nil {
-			return err
-		}
-
-		cmd := os.Args[1]
-		switch cmd {
-		case "install":
-			return d.Install()
-		case "uninstall":
-			return d.Uninstall()
-		case "start":
-			return d.Start()
-		case "stop":
-			return d.Stop()
-		case "status":
-			status, err := d.Status()
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Service status: %s\n", status)
-			return nil
-		}
-	}
-
-	d, err := NewDaemon(cfg, startFn, stopFn)
-	if err != nil {
-		return err
-	}
-
-	return d.Run()
 }

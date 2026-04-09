@@ -378,6 +378,11 @@ func Save(config *Config, path string) error {
 	return nil
 }
 
+// Save 将配置保存为 JSON 文件（作为 Config 结构体的方法）
+func (c *Config) Save(path string) error {
+	return Save(c, path)
+}
+
 // ToJSON 将配置序列化为 JSON 字符串
 func (c *Config) ToJSON() (string, error) {
 	data, err := json.MarshalIndent(c, "", "  ")
